@@ -1,14 +1,15 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
 import re
 import time
 import csv
 import random
 from bs4 import BeautifulSoup
 import telebot
-from telebot import types
+import schedule
+import threading
+import os
 
 #Funciona
 def tecnocasa(driver):
@@ -129,6 +130,10 @@ def solvia(driver):
             url = listing.find('a',href=True)
             try:
                 precio = precio.text.replace('€', '')
+                try:
+                    precio = precio.split(',', 1)[0]
+                except:
+                    pass
                 metraje = metraje.replace('m', '')
                 url = "https://www.solvia.es" + url['href']
             except:
@@ -331,13 +336,16 @@ def call_all():
     altamira(driver)
     #driver = uc.Chrome()
     try:
+        print("Iniciando idealista")
         idealista(driver)
     except:
         print("Error en idealista")   
     try:
+        print("Iniciando fotocasa")
         fotocasa(driver)
     except:
         print("Error en fotocasa")
+    print("Terminado")
 
 def find_value_by_regex_in_a_list(pattern, list):
     for item in list:
@@ -348,7 +356,14 @@ def find_value_by_regex_in_a_list(pattern, list):
 
 def add_to_csv_without_duplicates(dict_data,file_name='realstate_data.csv'):
     headers = ['precio', 'metraje', 'lugar', 'titulo', 'url']
-    
+    if os.path.exists(file_name):
+        pass
+    else:
+    # Create the file and write the header row
+        with open(file_name, 'w', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(headers)
+        print("File created successfully")
     # Check if the URL is already present in the CSV file
     with open(file_name, 'r') as csv_file:
         reader = csv.DictReader(csv_file)
@@ -381,24 +396,24 @@ bot = telebot.TeleBot(get_token(), parse_mode=None)
 
 #Todo bot after this point--------------------------------------------------------------
 
-def filter_data(data):
-	if float(data['precio']) < 140:
-		return True
-	else:
-		return False
+def filter_data(data={'precio':'0'}): #Filtro de datos
+    if float(data['precio']) <= 140:
+        return True
+    else:
+        return False
 
-def notify_all_users(data={'Nada':None},file_name = 'users.csv'):
+def notify_all_users(data={'precio':'0'},file_name = 'users.csv'):
     if filter_data(data) is False:
         print(data)
         return "No pasa el filtro"
     try:
         if data['lugar'] is None:
-            msg = "Nueva propiedad detectada \n\Titulo: {}\nPrecio: {}\nMetraje: {}\nUrl: {}".format(data['titulo'], data['precio'], data['metraje'],data['url'])
+            msg = "Nueva propiedad detectada \nTitulo: {}\nPrecio: {} €\nMetraje: {} m²\nUrl: {}".format(data['titulo'], data['precio'], data['metraje'],data['url'])
         else:
-            msg = "Nueva propiedad detectada \n\Titulo: {}\nPrecio: {}\nMetraje: {}\nLugar: {}\nUrl: {}".format(data['titulo'], data['precio'], data['metraje'], data['lugar'],data['url'])
+            msg = "Nueva propiedad detectada \nTitulo: {}\nPrecio: {} €\nMetraje: {} m²\nLugar: {}\nUrl: {}".format(data['titulo'], data['precio'], data['metraje'], data['lugar'],data['url'])
     except:
         #PLACEHOLDER
-        msg = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        msg = "Test"
         #PLACEHOLDER
     with open(file_name) as csvfile:
         reader = csv.DictReader(csvfile)
@@ -414,12 +429,20 @@ def start_bot(message):
 @bot.message_handler(commands=['help','ayuda'])
 def help(message):
     #Cambiar mensaje de ayuda
-	msg = "Hola " + str(message.from_user.first_name) + ", puedes usar /help para ver la lista de comandos disponibles"
+	msg = "/start para iniciar el bot\n/add para añadirte a la lista de notificaciones\n/remove para eliminarte de la lista de notificaciones"
 	bot.reply_to(message, msg)
 
-@bot.message_handler(commands=['add','añadir'])
+@bot.message_handler(commands=['add','añadir','agregar'])
 def añadir_usuario(message):
     headers = ['user', 'status']
+    if os.path.exists('users.csv'):
+        print("File already exists")
+    else:
+    # Create the file, write the header row, and add an empty line
+        with open('users.csv', 'w', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(headers)
+    print("File created successfully")
     # Check if the URL is already present in the CSV file
     with open('users.csv', 'r') as csv_file:
         reader = csv.DictReader(csv_file)
@@ -433,6 +456,24 @@ def añadir_usuario(message):
         writer.writerow(new_user)
         bot.reply_to(message, 'Fuiste añadido a la lista')
         return 'Usuario añadido'
+
+@bot.message_handler(commands=['remove','eliminar','borrar'])
+def eliminar_usuario(message):
+    # Read the data from the CSV file into a list of dictionaries
+    with open('users.csv', 'r') as csv_file:
+        reader = csv.DictReader(csv_file)
+        data = [row for row in reader]
+    
+    # Find the user in the data list and remove it
+    new_data = [row for row in data if row['user'] != message.chat.id]
+    
+    # Write the updated data list back to the CSV file
+    with open('users.csv', 'w', newline='') as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=['user', 'status'])
+        writer.writeheader()
+        for row in new_data:
+            writer.writerow(row)
+    bot.reply_to(message, 'Fuiste eliminado a la lista')
 
 #Todo admin commands here
 
@@ -451,9 +492,9 @@ def get_id(message):
  
 @bot.message_handler(commands=['all_scrape'])
 def all_scrape(message):
-    print('Scraping...')
     if check_admin_status(message.chat.id):
         bot.reply_to(message, 'Scraping...')
+        print('Scraping...')
         call_all()
 
 @bot.message_handler(commands=['all_notify_test'])
@@ -462,5 +503,15 @@ def notify_all_test(message):
     if check_admin_status(message.chat.id):
         notify_all_users()
 
+def create_shedule():
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+schedule.every(1).hours.do(call_all)
+thread = threading.Thread(target=create_shedule)
+thread.start()
+
 print('Bot_Started')
+#bot.polling()
 bot.infinity_polling()
