@@ -354,7 +354,7 @@ def find_value_by_regex_in_a_list(pattern, list):
             return match.group()
     return None
 
-def add_to_csv_without_duplicates(dict_data,file_name='realstate_data.csv'):
+def add_to_csv_without_duplicates(dict_data,file_name='realestate_data.csv'):
     headers = ['precio', 'metraje', 'lugar', 'titulo', 'url']
     if os.path.exists(file_name):
         pass
